@@ -1,0 +1,215 @@
+---
+title: "Final Project"
+author: "Zhengyan Yuan"
+date: "Due December 16, 2019"
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+# Project Purpose
+This project is using two data sets from Kagggle about the overall happiness and population in every country in 2015. Since I'm curious about the happiness score in different countries, I intended to analyze the fact that may influence the happiness.
+
+# package loading
+```{r}
+library(tidyverse)
+library(mosaic)
+library(mosaicData)
+library(DataComputing)
+library(knitr)
+library(dplyr)
+library(party)
+library(leaflet)
+library(ggplot2)
+```
+
+# Data Access
+```{r}
+rm(list=ls())
+data1 <- read.csv("2015.csv")
+data2 <- read.csv("2015pop.csv")
+#View the data
+head(data1)
+head(data2)
+nrow(data1)
+nrow(data2)
+View(data1)
+View(data2)
+```
+
+At the first glance, we can see that there are 158 cases (countries) in data1, while 264 in data2, and 12 variables in data1, 2 in data2.
+
+### Data Wrangling
+To see the total numbers of parameters that I'm interested in within differenet regions. 
+```{r}
+data1%>%
+  group_by(Region)%>%
+  summarise(total = sum(Happiness.Score, na.rm = T))
+# By different regions, I want to compare the whole and average happiness scores
+data1%>%
+  group_by(Region)%>%
+  summarise(sum_Happy = sum(Happiness.Score, na.rm = T))
+data1%>%
+  group_by(Region)%>%
+  summarise(avg_Happy = mean(Happiness.Score, na.rm = T))%>%
+  ggplot(aes(x = Region, y = avg_Happy))+
+  geom_point()
+# Also, I want to see the whole and average life expectancy
+data1%>%
+  group_by(Region)%>%
+  summarise(sum_Health = sum(Health..Life.Expectancy., na.rm = T))
+data1%>%
+  group_by(Region)%>%
+  summarise(avg_Health = mean(Health..Life.Expectancy., na.rm = T))%>%
+  ggplot(aes(x = Region, y = avg_Health))+
+  geom_point()
+# Also interested in their freedoms
+data1%>%
+  group_by(Region)%>%
+  summarise(total_Freedom = sum(Freedom, na.rm = T))
+data1%>%
+  group_by(Region)%>%
+  summarise(avg_Freedom = mean(Freedom, na.rm = T))%>%
+  ggplot(aes(x = Region, y = avg_Freedom))+
+  geom_point()
+# Look at how trustworthy the governments are for different regions
+data1%>%
+  group_by(Region)%>%
+  summarise(sum_gov = sum(Trust..Government.Corruption., na.rm = T))
+data1%>%
+  group_by(Region)%>%
+  summarise(avg_gov = mean(Trust..Government.Corruption., na.rm = T))%>%
+  ggplot(aes(x = Region, y = avg_gov))+
+  geom_point()
+```
+
+I want to combine those two datas together to have further analysis.
+```{r}
+Happydata <-
+  data1%>%
+  select(Country,Region,Happiness.Rank,Happiness.Score,Standard.Error,Health..Life.Expectancy.,Freedom,Trust..Government.Corruption.,)%>%
+  left_join(data2%>%select(Country, Population),
+            by = c("Country" = "Country"))%>%
+  na.omit()
+```
+
+I'm curious about the countries with some certain vows as below.
+```{r}
+Happydata%>%
+  filter(grepl("[aeiou]{2,}", Country, ignore.case = TRUE)) 
+Happydata%>%
+  filter( grepl( "[aeiou]$", Country ) ) %>% 
+  group_by( Region )
+Happydata%>%
+  arrange(desc(Happiness.Score))
+```
+
+Here, I want to get the confidence interval for the happiness scores in each country. 
+```{r}
+Happy <-
+  Happydata%>%
+  mutate(CI_upper = Happiness.Score + 2* Standard.Error)%>%
+  mutate(CI_low = Happiness.Score - 2* Standard.Error)
+```
+
+I want to get the rough idea about the elements affecting the happy score
+```{r}
+model1 <- lm( Happiness.Score~ Health..Life.Expectancy. + Freedom + Trust..Government.Corruption. + Population,data = Happydata)
+summary(model1)
+plot(model1)
+```
+The model I generated here is okay but I can still tell that there are some relationships between happiness score and other elements that I used.
+
+# Data Visualization
+```{r}
+# Deal with the data and get different categorical variables
+Happy_Graph<-
+  Happydata%>%
+  mutate(Happy_level = cut(Happiness.Score,breaks = c(0,3,5,6,7,8),labels = c("Not Happy","fairly happy","happy","very happy","super happy")),na.rm = T)%>%
+  mutate(Lif_level = cut(Health..Life.Expectancy.,breaks = c(0,0.5,0.8,1),labels = c("not long life","normal life","long life")),na.rm = T)%>%
+  mutate(Free_level = cut(Freedom,breaks= c(0,0.3,0.5,1),labels = c("not free","free","super free")))%>%
+  mutate(Pop_level = cut(Population,breaks= c(0,10000000,100000000,1000000000,1000000000000000),
+                         labels = c("small country","mid country","big country","super country")),
+                         na.rm = T)
+```
+
+### Draw the graphs
+Firstly, I want to take a look at each regions about the happy scores,life expectancy, freedom, government trust and population 
+```{r}
+Happy_Graph%>%
+  ggplot(aes(x = Region,y = Happiness.Score))+
+  geom_boxplot() +
+  ylim(0,8) +
+  xlab("Region")+
+  ylab("Happy Score")
+levels(Happy_Graph$Region)
+```
+
+From this box plot, we can see happiness level of sub-saharan african and south asian people are relatively low, that we can see people in both areas are less happy. In Australia, New Zealand and North America, people are much happier. But since I didn't get a lot data for those two areas, the ranges seem very narrow. However, I didn't see any too far away data, meaning every area has similar ranges and mean values. So I think the happiness doesn't depend on regions too much.
+
+Then what about the freedom?
+```{r}
+Happy_Graph%>%
+  ggplot(aes(x = Region,y = Freedom))+
+  geom_boxplot() +
+  ylim(0,0.7) +
+  xlab("Region")+
+  ylab("Freedom Score")
+```
+From this plot, we can see much more differences among different countries than the happiness one. Obviously, we can see the in average, European, Australian and New Zealand people tend to have more freedom, while Middle East and Northern African, South Asian and Sub-Saharan African have less freedom.
+
+What about the goverment?
+```{r}
+Happy_Graph%>%
+  ggplot(aes(x = Region,y = Trust..Government.Corruption.))+
+  geom_boxplot() +
+  ylim(0,0.6) +
+  xlab("Region")+
+  ylab("Government")
+```
+Now we can see Australian and New Zealand's governments tend to be better. Middle East and Northern Africa and Western European tend to have huge ranges maybe because of more countries in those two areas. Other regions stay almost the same.
+
+Now, I go deeper to explore the correlations about different elements affecting the happiness levels.
+```{r}
+# a. How does life expectancy affect the happiness score within different population sized countries?
+Happy_Graph%>%
+  group_by(Region)%>%
+  ggplot(aes(x = Health..Life.Expectancy.,y = Happiness.Score))+
+  geom_point(aes(shape = Pop_level))+
+  geom_smooth(method = "lm")
+```
+From this plot, we can see that there is a positive relationship between life expectancy and happiness, as what I expected before, like longer you live, much happier you would be. Also I differentiate the country sizes and realized that it seems like large countries tend to be less happy. In order to get more precise and accurate conclusion about it, I would draw more plots to see if it's true or not.
+```{r}
+Happy_Graph%>%
+  ggplot(aes(x = Pop_level, y = Happiness.Score, fill = Region))+
+  geom_bar(stat="identity")
+```
+It appears that smaller countries tend to be happier and larger countries tend to be less happy. And also we can see the order of happiness of different regions.
+
+So how does the freedom affect the happiness score in different regions?
+```{r}
+Happy_Graph%>%
+  group_by(Region)%>%
+  ggplot(aes(x = Freedom,y = Happiness.Score))+
+  geom_point(aes(shape = Pop_level,colour = Free_level))+
+  geom_smooth(method = "lm")+
+  facet_wrap(~Region)
+```
+That was out of my expectation since I thought more freedom people have, the happier people would be. But it appears in those graphs that in each area, the freedom doesn't play a big role in the happiness score.
+
+At last, I'm interested in how government's behaviors would affect the happiness. 
+```{r}
+Happydata%>%
+  ggplot(aes(x = Trust..Government.Corruption., y = Happiness.Score))+
+  geom_point()+
+  geom_smooth(method = "lm")
+```
+As we can see in this graph, it's almost a positive relationsihp so that we can say that more trustworthy the government is, the happier people are.
+
+# Conclusion
+So, from those graphs that I made, I can say that life expectancy, population size and government do have influence on happiness scores, while freedom doesn't have much.
+
+
+
